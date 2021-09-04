@@ -14,13 +14,19 @@ __status__ = "Development"
 import os
 import sys
 import json
+import time
 import shutil
 import requests
+
+from tqdm import tqdm
+from datetime import timedelta
 from bs4 import BeautifulSoup
+from sportsipy.ncaab.teams import Teams
 
 
-def get_logos(save_dir,
-              url="https://www.ncaa.com/schools-index/"):
+def get_logos_ncaa(
+    save_dir, url="https://www.ncaa.com/schools-index/", clean_dir=False
+):
     """Saves a json file in the specified save folder of all of the logos associated
     with each college in the NCAA.
 
@@ -28,7 +34,10 @@ def get_logos(save_dir,
         save_dir (string): Name of folder on where to save json file.
         url (str, optional): The url on where to get the logos from. Defaults to
             "https://www.ncaa.com/schools-index/".
+        clean_dir (bool): Clean the save_dir before writing json file.
     """
+
+    start = time.time()
 
     # Dictionary to hold logos
     logos = {}
@@ -41,7 +50,7 @@ def get_logos(save_dir,
     while page.status_code == 200:
 
         # Make a beautiful soup object
-        soup = BeautifulSoup(page.content, 'html.parser')
+        soup = BeautifulSoup(page.content, "html.parser")
 
         # Isolate the rows
         table_div = soup.find("div", id="schools-index")
@@ -59,11 +68,68 @@ def get_logos(save_dir,
         page = requests.get(os.path.join(url, str(page_index)))
 
     # Clean the specified save directory
-    __clean_dir(save_dir)
+    if clean_dir:
+        __clean_dir(save_dir)
 
     # Save the dictionary as a json file in the specified directory
-    with open(os.path.join(save_dir, 'logos.json'), 'w') as wf:
+    with open(os.path.join(save_dir, "logos_ncaa.json"), "w") as wf:
         json.dump(logos, wf, sort_keys=True, indent=4)
+
+    elapsed = time.time() - start
+    print(f"Scraping logos from NCAA took {timedelta(seconds=elapsed)}")
+
+
+def get_logos_sr(
+    save_dir, url="https://www.sports-reference.com/cbb/schools", clean_dir=False
+):
+    """Saves a json file in the specified save folder of all of the logos associated
+    with each college in the NCAA.
+
+    Args:
+        save_dir (string): Name of folder on where to save json file.
+        url (str, optional): The url on where to get the logos from. Defaults to
+            "https://www.sports-reference.com/cbb/schools".
+        clean_dir (bool): Clean the save_dir before writing json file.
+    """
+
+    start = time.time()
+
+    # Dictionary to hold logos
+    logos = {}
+
+    # Get a list of all teams from sportsipy api (kinda slow)
+    print("Getting a list of teams from sportsipy api...")
+    teams = [team.abbreviation for team in Teams()]
+    not_found = []
+
+    # Loop through all the teams and get the image url
+    for team in tqdm(teams, unit="teams"):
+        try:
+            page = requests.get(url + f"/{team.lower()}")
+
+            soup = BeautifulSoup(page.content, "html.parser")
+            meta = soup.find("div", id="meta")
+            image = meta.find("img", class_="teamlogo").get("src")
+
+            logos[team] = image
+        except AttributeError:
+            not_found.append(team)
+
+    # Clean the specified save directory
+    if clean_dir:
+        __clean_dir(save_dir)
+
+    # Save the dictionary as a json file in the specified directory
+    with open(os.path.join(save_dir, "logos_sr.json"), "w") as wf:
+        json.dump(logos, wf, sort_keys=True, indent=4)
+
+    # Print out the teams that weren't found
+    if not_found:
+        print(f"Could not find logos for the following teams: {not_found}")
+
+    # Print out elapsed time
+    elapsed = time.time() - start
+    print(f"Scraping logos from NCAA took {timedelta(seconds=elapsed)}")
 
 
 def __clean_dir(dir):
@@ -89,5 +155,5 @@ def __clean_dir(dir):
 
         # Upon failure, print out the reason and exit
         except Exception as e:
-            print('Failed to delete %s. Reason: %s' % (file_path, e))
+            print("Failed to delete %s. Reason: %s" % (file_path, e))
             sys.exit(2)
